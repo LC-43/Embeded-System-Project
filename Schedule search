@@ -1,0 +1,260 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+#include <limits.h>
+
+// A modifier selon le test que vous voulez effectuer :
+#define test 1
+
+// Modifier selon performance de votre ordinateur : 
+#define MAX_HYPERPERIOD 1000
+
+int N = 7;
+
+typedef struct {
+    char name[10];
+    int T;               // Période
+    int C;               // Temps d'exécution
+    int remaining_time;
+    int next_release;
+    bool executed;
+} Task;
+
+int nbre = 0;
+
+int gcd(int a, int b) {
+    while (b != 0) {
+        int tmp = b;
+        b = a % b;
+        a = tmp;
+    }
+    return a;
+}
+
+int lcm(int a, int b) {
+    return (a * b) / gcd(a, b);
+}
+
+void copy_tasks(Task dest[N], Task src[N]) {
+    for (int i = 0; i < N; i++) {
+        dest[i] = src[i];
+    }
+}
+
+void copy_schedule(int dest[MAX_HYPERPERIOD], int src[MAX_HYPERPERIOD], int len) {
+    for (int i = 0; i < len; i++) {
+        dest[i] = src[i];
+    }
+}
+
+int simulate(Task tasks[N], int hyperperiod, int schedule[MAX_HYPERPERIOD]) {
+    Task temp[N];
+    copy_tasks(temp, tasks);
+
+    int score = 0;
+    int current_duration = 0;
+    int current_task = -1;
+
+    for (int i = 0; i < N; i++) {
+        temp[i].remaining_time = temp[i].T;
+        temp[i].next_release = temp[i].T;
+        temp[i].executed = false;
+    }
+
+    for (int t = 0; t < hyperperiod; t++) {
+        schedule[t] = -1;
+
+        for (int i = 0; i < N; i++) {
+            if (t == temp[i].next_release) {
+                temp[i].remaining_time = temp[i].T;
+                temp[i].next_release += temp[i].T;
+                temp[i].executed = false;
+            }
+            if (!temp[i].executed && temp[i].remaining_time < temp[i].C)
+                return -1;
+            temp[i].remaining_time--;
+        }
+
+        if (current_duration > 0) {
+            current_duration--;
+            schedule[t] = current_task;
+            continue;
+        }
+
+        for (int i = 0; i < N; i++) {
+            if (temp[i].remaining_time >= temp[i].C && !temp[i].executed) {
+                current_task = i;
+                current_duration = temp[i].C - 1;
+                temp[i].executed = true;
+                schedule[t] = current_task;
+                score += temp[i].T - temp[i].remaining_time;
+                break;
+            }
+        }
+    }
+
+    return score;
+}
+
+void permute(Task tasks[N], int l, int r, int hyperperiod, int* best_score, Task best_order[N], int best_schedule[MAX_HYPERPERIOD]) {
+    if (l == r) {
+        int schedule[MAX_HYPERPERIOD];
+        int score = simulate(tasks, hyperperiod, schedule);
+        nbre++;
+        if (score == -1) return;
+        if (score < *best_score) {
+            *best_score = score;
+            copy_tasks(best_order, tasks);
+            copy_schedule(best_schedule, schedule, hyperperiod);
+        }
+        return;
+    }
+
+    for (int i = l; i <= r; i++) {
+        Task temp = tasks[l];
+        tasks[l] = tasks[i];
+        tasks[i] = temp;
+
+        permute(tasks, l + 1, r, hyperperiod, best_score, best_order, best_schedule);
+
+        temp = tasks[l];
+        tasks[l] = tasks[i];
+        tasks[i] = temp;
+    }
+}
+
+void generate_html(Task best_order[N], int best_schedule[MAX_HYPERPERIOD], int hyperperiod) {
+    FILE *fp = fopen("schedule.html", "w");
+    if (!fp) {
+        perror("Erreur lors de la création du fichier HTML");
+        return;
+    }
+
+    fprintf(fp,
+        "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Ordonnancement</title>"
+        "<style>body{font-family:sans-serif;} .task{stroke:#000;stroke-width:1;}</style></head><body>"
+        "<h2>Graphe d'ordonnancement des tâches</h2><svg width='%d' height='%d'>\n",
+        hyperperiod * 20 + 100, N * 50 + 60
+    );
+
+    const char* task_colors[] = {
+        "#ff9999", "#66b3ff", "#99ff99", "#ffcc99", "#c2c2f0", "#f0b3ff", "#ffb366"
+    };
+
+    for (int t = 0; t < hyperperiod; t++) {
+        int task_id = best_schedule[t];
+        if (task_id != -1) {
+            int x = 50 + t * 20;
+            int y = 50 + task_id * 50;
+            fprintf(fp,
+                "<rect x='%d' y='%d' width='20' height='30' fill='%s' class='task'>"
+                "<title>%s @ t=%d</title></rect>\n",
+                x, y, task_colors[task_id], best_order[task_id].name, t
+            );
+        }
+    }
+
+    for (int i = 0; i < N; i++) {
+        int y = 50 + i * 50 + 20;
+        fprintf(fp, "<text x='10' y='%d' font-size='14'>%s</text>\n", y, best_order[i].name);
+    }
+
+    for (int t = 0; t <= hyperperiod; t += 5) {
+        int x = 50 + t * 20;
+        fprintf(fp, "<text x='%d' y='%d' font-size='10' text-anchor='middle'>%d</text>\n",
+            x, N * 50 + 50, t);
+    }
+
+    fprintf(fp, "</svg></body></html>");
+    fclose(fp);
+
+    printf("✅ Fichier schedule.html généré. Ouvrez-le dans un navigateur pour voir le graphe.\n");
+}
+
+int main() {
+    Task tasks[10];  // suffisant pour tous les cas de test
+
+    if (test == 1) {
+        N = 7;
+        Task tmp[] = {
+            {"T1", 10, 2, 0, 0, false},
+            {"T2", 10, 3, 0, 0, false},
+            {"T3", 20, 2, 0, 0, false},
+            {"T4", 20, 2, 0, 0, false},
+            {"T5", 40, 2, 0, 0, false},
+            {"T6", 40, 2, 0, 0, false},
+            {"T7", 80, 3, 0, 0, false}
+        };
+        memcpy(tasks, tmp, sizeof(tmp));
+    } else if (test == 2) {
+        N = 3;
+        Task tmp[] = {
+            {"T1", 8, 3, 0, 0, false},
+            {"T2", 15, 2, 0, 0, false},
+            {"T3", 20, 4, 0, 0, false}
+        };
+        memcpy(tasks, tmp, sizeof(tmp));
+    } else if (test == 3) {
+        N = 7;
+        Task tmp[] = {
+            {"T1", 10, 1, 0, 0, false},
+            {"T2", 10, 2, 0, 0, false},
+            {"T3", 20, 5, 0, 0, false},
+            {"T4", 20, 3, 0, 0, false},
+            {"T5", 40, 5, 0, 0, false},
+            {"T6", 40, 8, 0, 0, false},
+            {"T7", 80, 4, 0, 0, false}
+        };
+        memcpy(tasks, tmp, sizeof(tmp));
+    } else {
+        N = 3;
+        Task tmp[] = {
+            {"T1", 10, 5, 0, 0, false},
+            {"T2", 15, 5, 0, 0, false},
+            {"T3", 30, 6, 0, 0, false},
+        };
+        memcpy(tasks, tmp, sizeof(tmp));
+    }
+
+    // Calcul de l’hyperpériode
+    int hyperperiod = tasks[0].T;
+    for (int i = 1; i < N; i++) {
+        hyperperiod = lcm(hyperperiod, tasks[i].T);
+    }
+
+    if (hyperperiod > MAX_HYPERPERIOD) {
+        printf("Hyperpériode trop grande.\n");
+        return 1;
+    }
+
+    printf("Hyperpériode : %d\n", hyperperiod);
+
+    int best_score = INT_MAX;
+    Task best_order[N];
+    int best_schedule[MAX_HYPERPERIOD];
+
+    permute(tasks, 0, N - 1, hyperperiod, &best_score, best_order, best_schedule);
+
+    if (best_score == INT_MAX) {
+        printf("Aucun ordonnancement valide trouvé.\n");
+        return 0;
+    }
+
+    printf("Ordre optimal :\n");
+    for (int i = 0; i < N; i++) {
+        printf("%s ", best_order[i].name);
+    }
+    printf("\n");
+
+    printf("\nOrdonnancement :\n");
+    for (int t = 0; t < hyperperiod; t++) {
+        if (best_schedule[t] == -1) {
+            printf("t=%3d : -\n", t);
+        } else {
+            printf("t=%3d : %s\n", t, best_order[best_schedule[t]].name);
+        }
+    }
+
+    generate_html(best_order, best_schedule, hyperperiod);
+    return 0;
+}
